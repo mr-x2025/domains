@@ -98,20 +98,23 @@ function loadEuropeanData($file) {
 
 // معالجة توليد الدومينات
 $domains = [];
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
     $selectedCountries = $_POST['countries'] ?? [];
-    $topCities = (int)($_POST['top_cities'] ?? 10);
+    $requestedCount = (int)($_POST['domain_count'] ?? 100);
     $customKeyword = trim($_POST['custom_keyword'] ?? '');
     $keywordPosition = $_POST['keyword_position'] ?? 'end';
-    $topKeywords = (int)($_POST['top_keywords'] ?? 10);
     $europeMode = $_POST['europe_mode'] ?? 'cities';
     
-    $keywords = loadKeywords('data/كلمات مفتاحيه جيو دومين.txt');
-    $keywords = array_slice($keywords, 0, $topKeywords);
+    // تحميل جميع الكلمات المفتاحية وترتيبها حسب القيمة
+    $allKeywords = loadKeywords('data/كلمات مفتاحيه جيو دومين.txt');
+    usort($allKeywords, function($a, $b) {
+        return $b['value'] - $a['value'];
+    });
     
+    // جمع جميع المدن من الدول المختارة
+    $allCities = [];
     foreach ($selectedCountries as $country) {
         $cities = [];
-        $countryPrefix = '';
         
         switch ($country) {
             case 'USA':
@@ -136,56 +139,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
         }
         
-        // ترتيب حسب عدد السكان
-        usort($cities, function($a, $b) {
-            return $b['population'] - $a['population'];
-        });
-        
-        $cities = array_slice($cities, 0, $topCities);
-        
-        // إضافة الكلمة المفتاحية المخصصة
-        if (!empty($customKeyword)) {
-            foreach ($cities as $city) {
-                $cityName = str_replace(' ', '', $city['name']);
+        $allCities = array_merge($allCities, $cities);
+    }
+    
+    // ترتيب المدن حسب عدد السكان (الأعلى أولاً)
+    usort($allCities, function($a, $b) {
+        return $b['population'] - $a['population'];
+    });
+    
+    // توليد الدومينات بناءً على العدد المطلوب
+    if (!empty($customKeyword)) {
+        // إذا كانت هناك كلمة مفتاحية مخصصة
+        $domainsToGenerate = min($requestedCount, count($allCities));
+        for ($i = 0; $i < $domainsToGenerate; $i++) {
+            $cityName = str_replace(' ', '', $allCities[$i]['name']);
+            
+            if (strpos($customKeyword, '@@@') !== false) {
+                $domain = str_replace('@@@', $cityName, $customKeyword);
+            } else {
                 if ($keywordPosition === 'start') {
-                    if (strpos($customKeyword, '@@@') !== false) {
-                        $domain = str_replace('@@@', $cityName, $customKeyword);
-                    } else {
-                        $domain = $customKeyword . $cityName;
-                    }
+                    $domain = $customKeyword . $cityName;
                 } else {
-                    if (strpos($customKeyword, '@@@') !== false) {
-                        $domain = str_replace('@@@', $cityName, $customKeyword);
-                    } else {
-                        $domain = $cityName . $customKeyword;
-                    }
+                    $domain = $cityName . $customKeyword;
                 }
-                $domains[] = strtolower($domain) . '.com';
             }
+            $domains[] = strtolower($domain) . '.com';
         }
+    } else {
+        // توليد تلقائي مع توزيع الكلمات الأعلى قيمة
+        $generated = 0;
+        $keywordIndex = 0;
+        $cityIndex = 0;
         
-        // توليد مع الكلمات المفتاحية من الملف
-        foreach ($keywords as $kw) {
-            foreach ($cities as $city) {
-                $cityName = str_replace(' ', '', $city['name']);
-                $keyword = $kw['keyword'];
-                
-                if (strpos($keyword, '@@@') !== false) {
-                    $domain = str_replace('@@@', $cityName, $keyword);
-                } else {
-                    if ($keywordPosition === 'start') {
-                        $domain = $keyword . $cityName;
-                    } else {
-                        $domain = $cityName . $keyword;
-                    }
-                }
-                $domains[] = strtolower($domain) . '.com';
+        while ($generated < $requestedCount && $keywordIndex < count($allKeywords)) {
+            $keyword = $allKeywords[$keywordIndex]['keyword'];
+            $cityName = str_replace(' ', '', $allCities[$cityIndex]['name']);
+            
+            if (strpos($keyword, '@@@') !== false) {
+                $domain = str_replace('@@@', $cityName, $keyword);
+            } else {
+                $domain = $cityName . $keyword;
+            }
+            
+            $domains[] = strtolower($domain) . '.com';
+            $generated++;
+            
+            // الانتقال للمدينة التالية
+            $cityIndex++;
+            if ($cityIndex >= count($allCities)) {
+                $cityIndex = 0;
+                $keywordIndex++;
             }
         }
     }
     
     // إزالة التكرار
     $domains = array_unique($domains);
+    $domains = array_slice($domains, 0, $requestedCount);
     
     // حفظ في الجلسة لصفحة الفحص
     $_SESSION['generated_domains'] = array_merge($_SESSION['generated_domains'] ?? [], $domains);
@@ -430,16 +440,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="form-group">
-                <label>عدد أكبر المدن حسب السكان:</label>
-                <input type="number" name="top_cities" value="10" min="1" max="100">
+                <label>عدد الدومينات المراد توليدها:</label>
+                <input type="number" name="domain_count" id="domain_count" value="100" min="10" max="10000">
             </div>
 
             <div class="form-group">
                 <label>كلمة مفتاحية مخصصة (اختياري - استخدم @@@ للمدينة):</label>
-                <input type="text" name="custom_keyword" placeholder="مثال: Visit@@@ أو @@@Hotels">
+                <input type="text" name="custom_keyword" id="custom_keyword" placeholder="مثال: Visit@@@ أو @@@Hotels">
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="keyword-position-group" style="display: none;">
                 <label>موضع الكلمة المفتاحية:</label>
                 <select name="keyword_position">
                     <option value="end">في النهاية</option>
@@ -447,12 +457,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </select>
             </div>
 
-            <div class="form-group">
-                <label>عدد الكلمات المفتاحية الأعلى قيمة:</label>
-                <input type="number" name="top_keywords" value="10" min="1" max="100">
-            </div>
-
-            <button type="submit" class="button">توليد الدومينات 🚀</button>
+            <button type="submit" name="generate" class="button">توليد الدومينات 🚀</button>
             <button type="button" class="button button-secondary" onclick="sendToChecker()">إرسال للفحص ✓</button>
             <button type="button" class="button button-secondary" onclick="copyDomains()">نسخ الكل 📋</button>
             <button type="button" class="button button-secondary" onclick="downloadCSV()">تحميل CSV 💾</button>
@@ -492,6 +497,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // إظهار خيارات أوروبا
         document.getElementById('europe').addEventListener('change', function() {
             document.getElementById('europe-options').style.display = this.checked ? 'block' : 'none';
+        });
+
+        // إظهار موضع الكلمة المفتاحية فقط عند إدخال كلمة مخصصة
+        document.getElementById('custom_keyword').addEventListener('input', function() {
+            const positionGroup = document.getElementById('keyword-position-group');
+            positionGroup.style.display = this.value.trim() !== '' ? 'block' : 'none';
         });
 
         // Context Menu
