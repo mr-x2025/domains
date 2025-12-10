@@ -98,12 +98,16 @@ function loadEuropeanData($file) {
 
 // معالجة توليد الدومينات
 $domains = [];
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
-    $selectedCountries = $_POST['countries'] ?? [];
-    $requestedCount = (int)($_POST['domain_count'] ?? 100);
-    $customKeyword = trim($_POST['custom_keyword'] ?? '');
-    $keywordPosition = $_POST['keyword_position'] ?? 'end';
-    $europeMode = $_POST['europe_mode'] ?? 'cities';
+$debugMessage = '';
+
+// Check if form was submitted
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['generate'])) {
+        $selectedCountries = $_POST['countries'] ?? [];
+        $requestedCount = (int)($_POST['domain_count'] ?? 100);
+        $customKeyword = trim($_POST['custom_keyword'] ?? '');
+        $keywordPosition = $_POST['keyword_position'] ?? 'end';
+        $europeMode = $_POST['europe_mode'] ?? 'cities';
     
     // تحميل جميع الكلمات المفتاحية وترتيبها حسب القيمة
     $allKeywords = loadKeywords('data/كلمات مفتاحيه جيو دومين.txt');
@@ -193,12 +197,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
         }
     }
     
-    // إزالة التكرار
-    $domains = array_unique($domains);
-    $domains = array_slice($domains, 0, $requestedCount);
-    
-    // حفظ في الجلسة لصفحة الفحص
-    $_SESSION['generated_domains'] = array_merge($_SESSION['generated_domains'] ?? [], $domains);
+        // إزالة التكرار
+        $domains = array_unique($domains);
+        $domains = array_slice($domains, 0, $requestedCount);
+        
+        // حفظ في الجلسة لصفحة الفحص
+        $_SESSION['generated_domains'] = array_merge($_SESSION['generated_domains'] ?? [], $domains);
+    } else {
+        $debugMessage = 'تم استلام طلب POST لكن زر التوليد لم يتم الضغط عليه';
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -398,7 +405,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
 <body>
     <div class="form-container">
         <h2>🌍 توليد جيو دومين</h2>
-        <form method="POST">
+        <form method="POST" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
             <div class="form-group">
                 <label>اختر الدول المستهدفة:</label>
                 <div class="checkbox-group">
@@ -457,11 +464,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
                 </select>
             </div>
 
-            <button type="submit" name="generate" class="button">توليد الدومينات 🚀</button>
+            <button type="submit" name="generate" value="1" class="button">توليد الدومينات 🚀</button>
             <button type="button" class="button button-secondary" onclick="sendToChecker()">إرسال للفحص ✓</button>
             <button type="button" class="button button-secondary" onclick="copyDomains()">نسخ الكل 📋</button>
             <button type="button" class="button button-secondary" onclick="downloadCSV()">تحميل CSV 💾</button>
         </form>
+        
+        <?php if (!empty($debugMessage)): ?>
+        <div style="background: #ff6b6b; padding: 15px; border-radius: 8px; margin-top: 15px; color: white;">
+            <strong>Debug:</strong> <?php echo htmlspecialchars($debugMessage); ?>
+        </div>
+        <?php endif; ?>
     </div>
 
     <?php if (!empty($domains)): ?>
